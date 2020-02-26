@@ -1,0 +1,63 @@
+---
+- name: Playbook for auto update of Gitlab-CE
+  hosts: localhost
+  gather_facts: yes
+  become: true
+  tasks:
+    - name: Remove latest image
+      docker_image:
+        name: gitlab/gitlab-ce:latest
+        state: absent 
+
+    - name: Check if new image exists
+      docker_image:
+        name: gitlab/gitlab-ce:latest
+        source: pull
+      register: pull 
+
+    - name: Check if container exists
+      docker_container_info:
+        name: gitlab
+      when: pull.changed
+  
+    - name: Stop gitlab container
+      docker_container:
+        name: gitlab
+        state: stopped
+      when: pull.changed
+
+    - name: remove gitlab container
+      docker_container:
+        name: gitlab
+        state: absent
+      when: pull.changed
+
+    - name: update gitlab-ce
+      docker_container:
+        name: gitlab
+        image: gitlab/gitlab-ce:latest 
+        state: started
+        restart: yes
+        volumes:
+          - /srv/gitlab/config:/etc/gitlab:Z
+          - /srv/gitlab/logs:/var/log/gitlab:Z
+          - /srv/gitlab/data:/var/opt/gitlab:Z
+          - /mnt:/mnt:Z
+        published_ports:
+          - 443:443
+          - 80:80
+          - 0.0.0.0:22:22  
+      when: pull.changed
+    
+    - name: Start gitlab container
+      docker_container:
+        name: gitlab
+        state: started
+      when: pull.changed
+
+    - name: Send notis to Cisco webbex teams
+      script: update-notis.sh 
+      when: pull.changed
+    
+    - name: Clean up
+      command: docker system prune
